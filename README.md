@@ -1,5 +1,6 @@
 # Pre-requisite
 * .NET 7 installed
+* Docker installed
 
 # Tutorial for .NET Core Microservice Web API
 
@@ -129,3 +130,71 @@ Creating {"Id":0,"Summary":"string","Description":"string"}
 Deleting Todo ID 1
 ```
 
+## Let's run this basic microservice in a docker container
+-- Source code in 2_dockerised_web_api --
+
+1. Add a Dockerfile into the project, and on the dockerfile let's do a 2 step build:
+* Build with the dotnet sdk docker image.
+```
+FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build-env
+WORKDIR /app
+
+# Copy csproj and restore as distinct layers
+COPY *.csproj ./
+RUN dotnet restore
+
+# Copy everything else and build
+COPY . ./
+# TODO change linux-arm64 to linux-amd64 if not running on m1
+RUN dotnet publish -c Release -o out -r linux-arm64
+```
+
+* With the output of the above build, create another image using the runtime docker image. This makes our final docker image smaller, and containing only runtime libraries.
+```
+# Build runtime image
+FROM mcr.microsoft.com/dotnet/runtime:7.0
+WORKDIR /app
+COPY --from=build-env /app/out .
+EXPOSE 80
+ENTRYPOINT ["dotnet", "DockerisedWebApi.dll"]
+```
+
+2. Build the docker image
+```
+$ docker build -t dotnet_test -f Dockerfile 
+ => [internal] load build definition from Dockerfile  2.0s
+ ...
+ => => exporting layers 3.0s
+ => => writing image sha256:866bf0dcd655a92b81fa873e125e82a30db526ee96fdc9e829e018a79a9af4ec 1.0s
+ => => naming to docker.io/library/dotnet_test
+```
+
+> Note: -t dotnet_test means, tag the resulting docker image as dotnet_test
+> More information on https://docs.docker.com/engine/reference/commandline/build/
+
+
+3. Run the docker image locally
+```
+$ docker run -p 8080:80 dotnet_test:latest
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://[::]:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /app
+```
+
+> Note: -p 8080:80 means, do a port mapping from local port 8080 on the host, to port 80 of the docker container.
+> More information on https://docs.docker.com/engine/reference/commandline/run/
+
+
+4. Navigate to `http://localhost:8080/swagger/index.html` and again trigger all endpoints.
+```
+...
+Retrieving Todo ID 1
+Updating {"Id":1,"Summary":"string","Description":"string"} with id 1
+Deleting Todo ID 1
+Creating {"Id":0,"Summary":"string","Description":"string"}
+```
